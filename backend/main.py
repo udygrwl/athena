@@ -3,8 +3,10 @@ from pathlib import Path
 from typing import Optional, List
 from dotenv import load_dotenv
 
+# Load .env when running locally (not present in Railway — use env vars there)
 env_path = Path(__file__).parent.parent / ".env"
-load_dotenv(dotenv_path=env_path, override=True)
+if env_path.exists():
+    load_dotenv(dotenv_path=env_path, override=True)
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,10 +20,13 @@ from roleplay_prompts import CHAT_SYSTEM_PROMPT
 
 app = FastAPI(title="Athena API")
 
+# CORS: allow explicit origins from env var, or fall back to wildcard for dev/POC
+_raw_origins = os.getenv("ALLOWED_ORIGINS", "*")
+_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-    allow_credentials=True,
+    allow_origins=_origins,
+    allow_credentials=_raw_origins != "*",
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -139,4 +144,5 @@ async def chat(req: ChatRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)

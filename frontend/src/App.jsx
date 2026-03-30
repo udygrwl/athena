@@ -4,7 +4,7 @@ import DebateForm from './components/DebateForm'
 import DebateResults from './components/DebateResults'
 import RoleplayPage from './components/roleplay/RoleplayPage'
 
-const API = 'http://localhost:8000'
+const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 const ROUND_PROGRESS = { round0: 25, round1: 50, round2: 75, verdict: 100 }
 
 function buildTranscript(conversations) {
