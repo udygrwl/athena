@@ -18,7 +18,6 @@ AVAILABLE_MODELS = [
     {"id": "gemini-2.5-pro",              "name": "Gemini 2.5 Pro",              "provider": "google",    "thinking": True,  "reasoning": False},
     {"id": "gemini-2.5-flash",            "name": "Gemini 2.5 Flash",            "provider": "google",    "thinking": True,  "reasoning": False},
     {"id": "gemini-2.5-flash-lite",       "name": "Gemini 2.5 Flash Lite",       "provider": "google",    "thinking": False, "reasoning": False},
-    {"id": "gemini-2.0-flash",            "name": "Gemini 2.0 Flash",            "provider": "google",    "thinking": False, "reasoning": False},
     # ── OpenAI — GPT-5.4 (latest) ────────────────────────────────────────────
     {"id": "gpt-5.4",                     "name": "GPT-5.4",                     "provider": "openai",    "thinking": False, "reasoning": False},
     {"id": "gpt-5.4-mini",                "name": "GPT-5.4 Mini",                "provider": "openai",    "thinking": False, "reasoning": False},
