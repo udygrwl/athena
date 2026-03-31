@@ -18,16 +18,13 @@ AVAILABLE_MODELS = [
     {"id": "gemini-1.5-pro",              "name": "Gemini 1.5 Pro",              "provider": "google",    "thinking": False, "reasoning": False},
     # ── OpenAI — GPT-5.4 (latest) ────────────────────────────────────────────
     {"id": "gpt-5.4",                     "name": "GPT-5.4",                     "provider": "openai",    "thinking": False, "reasoning": False},
-    {"id": "gpt-5.4-pro",                 "name": "GPT-5.4 Pro",                 "provider": "openai",    "thinking": False, "reasoning": False},
     {"id": "gpt-5.4-mini",                "name": "GPT-5.4 Mini",                "provider": "openai",    "thinking": False, "reasoning": False},
     {"id": "gpt-5.4-nano",                "name": "GPT-5.4 Nano",                "provider": "openai",    "thinking": False, "reasoning": False},
     # ── OpenAI — GPT-5.3 / 5.2 / 5.1 / 5.0 ─────────────────────────────────
     {"id": "gpt-5.3-chat-latest",         "name": "GPT-5.3",                     "provider": "openai",    "thinking": False, "reasoning": False},
     {"id": "gpt-5.2",                     "name": "GPT-5.2",                     "provider": "openai",    "thinking": False, "reasoning": False},
-    {"id": "gpt-5.2-pro",                 "name": "GPT-5.2 Pro",                 "provider": "openai",    "thinking": False, "reasoning": False},
     {"id": "gpt-5.1",                     "name": "GPT-5.1",                     "provider": "openai",    "thinking": False, "reasoning": False},
     {"id": "gpt-5",                       "name": "GPT-5",                       "provider": "openai",    "thinking": False, "reasoning": False},
-    {"id": "gpt-5-pro",                   "name": "GPT-5 Pro",                   "provider": "openai",    "thinking": False, "reasoning": False},
     {"id": "gpt-5-mini",                  "name": "GPT-5 Mini",                  "provider": "openai",    "thinking": False, "reasoning": False},
     # ── OpenAI — GPT-4 series ────────────────────────────────────────────────
     {"id": "gpt-4.1",                     "name": "GPT-4.1",                     "provider": "openai",    "thinking": False, "reasoning": False},
