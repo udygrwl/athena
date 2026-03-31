@@ -8,9 +8,9 @@ env_path = Path(__file__).parent.parent / ".env"
 if env_path.exists():
     load_dotenv(dotenv_path=env_path, override=True)
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 from pydantic import BaseModel
 
 from models import get_available_models, call_model
@@ -20,21 +20,34 @@ from roleplay_prompts import CHAT_SYSTEM_PROMPT
 
 app = FastAPI(title="Athena API")
 
-# CORS — comma-separated list in ALLOWED_ORIGINS, or "*" to allow all
-_raw = os.getenv("ALLOWED_ORIGINS", "*")
-if _raw.strip() == "*":
-    _origins = ["*"]
-    _creds = False
-else:
-    _origins = [o.strip() for o in _raw.split(",") if o.strip()]
-    _creds = True
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=_origins,
-    allow_credentials=_creds,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Raw CORS middleware — echoes back the exact Origin header so Railway's
+# Fastly CDN doesn't strip it (Fastly drops `Access-Control-Allow-Origin: *`
+# but passes through specific origin values).
+@app.middleware("http")
+async def cors_middleware(request: Request, call_next):
+    origin = request.headers.get("origin", "")
+
+    # Handle OPTIONS preflight
+    if request.method == "OPTIONS":
+        return Response(
+            status_code=200,
+            headers={
+                "Access-Control-Allow-Origin": origin or "*",
+                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+                "Access-Control-Allow-Headers": "*",
+                "Access-Control-Max-Age": "86400",
+            },
+        )
+
+    response = await call_next(request)
+    if origin:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "*"
+        response.headers["Vary"] = "Origin"
+    else:
+        response.headers["Access-Control-Allow-Origin"] = "*"
+    return response
 
 
 # ── Debate ───────────────────────────────────────────────────────────────────
