@@ -10,7 +10,11 @@ const ROUND_PROGRESS = { round0: 25, round1: 50, round2: 75, verdict: 100 }
 // stages: setup | judge_chat | debating | results | verdict_chat
 export default function App() {
   // ── theme ──────────────────────────────────────────────────────────────────
-  const [theme, setTheme] = useState(() => localStorage.getItem('athena-theme') || 'dark')
+  const [theme, setTheme] = useState(() => {
+    const saved = localStorage.getItem('athena-theme')
+    if (saved) return saved
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  })
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark')
     localStorage.setItem('athena-theme', theme)
