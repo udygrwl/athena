@@ -46,6 +46,10 @@ AVAILABLE_MODELS = [
 
 OPENAI_REASONING_MODELS = {"o1", "o1-mini", "o1-pro", "o3", "o3-mini", "o4-mini"}
 
+# Models that require max_completion_tokens instead of max_tokens
+def openai_uses_completion_tokens(model_id: str) -> bool:
+    return model_id in OPENAI_REASONING_MODELS or model_id.startswith("gpt-5")
+
 
 def get_available_models():
     available = []
@@ -150,11 +154,11 @@ async def call_google(model_id: str, prompt: str, use_thinking: bool, max_tokens
 async def call_openai(model_id: str, prompt: str, max_tokens: Optional[int]) -> str:
     from openai import AsyncOpenAI
     client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    is_reasoning = model_id in OPENAI_REASONING_MODELS
+    use_completion_tokens = openai_uses_completion_tokens(model_id)
 
     kwargs = dict(model=model_id, messages=[{"role": "user", "content": prompt}])
-    effective_tokens = max_tokens or (8192 if is_reasoning else 4096)
-    if is_reasoning:
+    effective_tokens = max_tokens or (8192 if use_completion_tokens else 4096)
+    if use_completion_tokens:
         kwargs["max_completion_tokens"] = effective_tokens
     else:
         kwargs["max_tokens"] = effective_tokens
