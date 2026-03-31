@@ -1,33 +1,30 @@
 import os
+import re
+import json as _json
 from pathlib import Path
 from typing import Optional, List
 from dotenv import load_dotenv
 
-# Load .env when running locally (not present in Railway — use env vars there)
 env_path = Path(__file__).parent.parent / ".env"
 if env_path.exists():
     load_dotenv(dotenv_path=env_path, override=True)
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, Response
 from pydantic import BaseModel
 
 from models import get_available_models, call_model
 from orchestrator import run_debate
-from roleplay_orchestrator import run_roleplay
-from roleplay_prompts import CHAT_SYSTEM_PROMPT
+from prompts import JUDGE_CHAT_SYSTEM_PROMPT, JUDGE_POST_CHAT_SYSTEM_PROMPT
 
 app = FastAPI(title="Athena API")
 
-# Raw CORS middleware — echoes back the exact Origin header so Railway's
-# Fastly CDN doesn't strip it (Fastly drops `Access-Control-Allow-Origin: *`
-# but passes through specific origin values).
+READY_RE = re.compile(r'\[DEBATE_READY:\s*(\{.*?\})\]', re.DOTALL)
+
+
 @app.middleware("http")
 async def cors_middleware(request: Request, call_next):
     origin = request.headers.get("origin", "")
-
-    # Handle OPTIONS preflight
     if request.method == "OPTIONS":
         return Response(
             status_code=200,
@@ -38,7 +35,6 @@ async def cors_middleware(request: Request, call_next):
                 "Access-Control-Max-Age": "86400",
             },
         )
-
     response = await call_next(request)
     if origin:
         response.headers["Access-Control-Allow-Origin"] = origin
@@ -50,14 +46,7 @@ async def cors_middleware(request: Request, call_next):
     return response
 
 
-# ── Debate ───────────────────────────────────────────────────────────────────
-
-class DebateRequest(BaseModel):
-    topic: str
-    advocate_models: List[str]
-    judge_model: str
-    use_thinking: bool = False
-
+# ── Models / Health ───────────────────────────────────────────────────────────
 
 @app.get("/api/models")
 def list_models():
@@ -73,6 +62,92 @@ def health():
         "google":    key_info(_google_key()),
         "openai":    key_info(_openai_key()),
     }
+
+
+# ── Judge pre-debate chat ─────────────────────────────────────────────────────
+
+class ChatMessage(BaseModel):
+    role: str   # "user" | "assistant"
+    content: str
+
+
+class JudgeChatRequest(BaseModel):
+    judge_model: str
+    message: str
+    history: List[ChatMessage] = []
+
+
+@app.post("/api/judge/chat")
+async def judge_chat(req: JudgeChatRequest):
+    available_ids = {m["id"] for m in get_available_models()}
+    if req.judge_model not in available_ids:
+        raise HTTPException(status_code=400, detail=f"Model not available: {req.judge_model}")
+
+    parts = [JUDGE_CHAT_SYSTEM_PROMPT, ""]
+    for msg in req.history:
+        label = "User" if msg.role == "user" else "Athena"
+        parts.append(f"{label}: {msg.content}")
+    parts.append(f"User: {req.message}")
+    parts.append("Athena:")
+    prompt = "\n\n".join(parts)
+
+    raw = await call_model(req.judge_model, prompt, max_tokens=2048)
+
+    # Extract [DEBATE_READY: {...}] marker if present
+    m = READY_RE.search(raw)
+    debate_topic = None
+    display_content = raw
+    if m:
+        try:
+            data = _json.loads(m.group(1))
+            debate_topic = data.get("topic")
+            display_content = raw[:m.start()].rstrip()
+        except Exception:
+            pass
+
+    return {"content": display_content, "debate_topic": debate_topic}
+
+
+# ── Judge post-debate chat ────────────────────────────────────────────────────
+
+class PostDebateChatRequest(BaseModel):
+    judge_model: str
+    message: str
+    history: List[ChatMessage] = []
+    transcript: str
+    verdict: str
+
+
+@app.post("/api/judge/post-debate-chat")
+async def judge_post_debate_chat(req: PostDebateChatRequest):
+    available_ids = {m["id"] for m in get_available_models()}
+    if req.judge_model not in available_ids:
+        raise HTTPException(status_code=400, detail=f"Model not available: {req.judge_model}")
+
+    system = JUDGE_POST_CHAT_SYSTEM_PROMPT.format(
+        transcript=req.transcript,
+        verdict=req.verdict,
+    )
+
+    parts = [system, ""]
+    for msg in req.history:
+        label = "User" if msg.role == "user" else "Athena"
+        parts.append(f"{label}: {msg.content}")
+    parts.append(f"User: {req.message}")
+    parts.append("Athena:")
+    prompt = "\n\n".join(parts)
+
+    content = await call_model(req.judge_model, prompt, max_tokens=4096)
+    return {"content": content}
+
+
+# ── Debate ────────────────────────────────────────────────────────────────────
+
+class DebateRequest(BaseModel):
+    topic: str
+    advocate_models: List[str]
+    judge_model: str
+    use_thinking: bool = False
 
 
 @app.post("/api/debate")
@@ -96,79 +171,6 @@ async def debate(req: DebateRequest):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
-
-
-# ── Roleplay ─────────────────────────────────────────────────────────────────
-
-class RoleplayActor(BaseModel):
-    model_id: str
-    role: str
-
-
-class RoleplayRequest(BaseModel):
-    actors: List[RoleplayActor]
-    scenario: str
-    max_turns: Optional[int] = 20
-
-
-@app.post("/api/roleplay")
-async def roleplay(req: RoleplayRequest):
-    if not (2 <= len(req.actors) <= 3):
-        raise HTTPException(status_code=400, detail="2 or 3 actors required.")
-    if not req.scenario.strip():
-        raise HTTPException(status_code=400, detail="Scenario cannot be empty.")
-
-    available_ids = {m["id"] for m in get_available_models()}
-    for a in req.actors:
-        if a.model_id not in available_ids:
-            raise HTTPException(status_code=400, detail=f"Model not available: {a.model_id}")
-
-    async def event_stream():
-        async for chunk in run_roleplay(req.actors, req.scenario, req.max_turns):
-            yield chunk
-
-    return StreamingResponse(
-        event_stream(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
-
-
-# ── Analysis Chat ─────────────────────────────────────────────────────────────
-
-class ChatHistoryMessage(BaseModel):
-    role: str    # "user" | "assistant"
-    content: str
-
-
-class ChatRequest(BaseModel):
-    model_id: str
-    message: str
-    history: List[ChatHistoryMessage] = []
-    context: str = ""
-
-
-@app.post("/api/chat")
-async def chat(req: ChatRequest):
-    available_ids = {m["id"] for m in get_available_models()}
-    if req.model_id not in available_ids:
-        raise HTTPException(status_code=400, detail=f"Model not available: {req.model_id}")
-
-    # Build prompt: system + optional transcript context + conversation history + new message
-    parts = [CHAT_SYSTEM_PROMPT]
-    if req.context.strip():
-        parts.append(f"\n=== ROLEPLAY TRANSCRIPTS ===\n{req.context}\n=== END TRANSCRIPTS ===")
-    if req.history:
-        history_lines = []
-        for msg in req.history:
-            label = "User" if msg.role == "user" else "Assistant"
-            history_lines.append(f"{label}: {msg.content}")
-        parts.append("\n" + "\n\n".join(history_lines))
-    parts.append(f"\nUser: {req.message}\nAssistant:")
-
-    prompt = "\n".join(parts)
-    content = await call_model(req.model_id, prompt, max_tokens=2048)
-    return {"content": content}
 
 
 if __name__ == "__main__":

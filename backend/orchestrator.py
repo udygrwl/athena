@@ -1,4 +1,5 @@
 import asyncio
+import random
 from typing import AsyncGenerator
 import json
 
@@ -17,6 +18,20 @@ async def run_debate(
     use_thinking: bool = False,
 ) -> AsyncGenerator[str, None]:
     model_a, model_b, model_c = advocate_models
+
+    # Shuffle labels so judge can't infer model from position
+    labels = ['A', 'B', 'C']
+    random.shuffle(labels)
+    anon = {
+        model_a: f"Advocate {labels[0]}",
+        model_b: f"Advocate {labels[1]}",
+        model_c: f"Advocate {labels[2]}",
+    }
+
+    # Emit mapping so frontend can offer reveal toggle
+    yield sse_event("anon_map", {
+        "mapping": {anon[m]: m for m in advocate_models}
+    })
 
     def cm(model_id, prompt):
         return call_model(model_id, prompt, use_thinking=use_thinking)
@@ -45,19 +60,19 @@ async def run_debate(
     yield sse_event("round0", {
         "round": 0,
         "results": [
-            {"model": m, "model_name": get_model_name(m), "content": positions[m]}
+            {"model": m, "model_name": get_model_name(m), "anon_label": anon[m], "content": positions[m]}
             for m in advocate_models
         ]
     })
 
-    # ── Round 1: each model critiques the other two ─────────────────────────
+    # ── Round 1: each model critiques the other two (using anon labels) ──────
     yield sse_event("status", {"round": 1, "message": "Round 1: Cross-critiquing positions..."})
 
     def critique_prompt(other_a, other_b):
         return ROUND_1_PROMPT.format(
             topic=topic,
-            model_a=get_model_name(other_a), position_a=positions[other_a],
-            model_b=get_model_name(other_b), position_b=positions[other_b],
+            model_a=anon[other_a], position_a=positions[other_a],
+            model_b=anon[other_b], position_b=positions[other_b],
         )
 
     round1_results = await asyncio.gather(
@@ -79,22 +94,23 @@ async def run_debate(
             {
                 "model": m,
                 "model_name": get_model_name(m),
+                "anon_label": anon[m],
                 "content": critiques[m],
-                "critiqued": [get_model_name(o) for o in advocate_models if o != m],
+                "critiqued": [anon[o] for o in advocate_models if o != m],
             }
             for m in advocate_models
         ]
     })
 
-    # ── Round 2: each model revises based on critiques it received ───────────
+    # ── Round 2: revise based on critiques (using anon labels) ──────────────
     yield sse_event("status", {"round": 2, "message": "Round 2: Revising positions..."})
 
     def revision_prompt(model, other_a, other_b):
         return ROUND_2_PROMPT.format(
             topic=topic,
             original_position=positions[model],
-            critic_a=get_model_name(other_a), critique_a=critiques[other_a],
-            critic_b=get_model_name(other_b), critique_b=critiques[other_b],
+            critic_a=anon[other_a], critique_a=critiques[other_a],
+            critic_b=anon[other_b], critique_b=critiques[other_b],
         )
 
     round2_results = await asyncio.gather(
@@ -113,16 +129,16 @@ async def run_debate(
     yield sse_event("round2", {
         "round": 2,
         "results": [
-            {"model": m, "model_name": get_model_name(m), "content": revisions[m]}
+            {"model": m, "model_name": get_model_name(m), "anon_label": anon[m], "content": revisions[m]}
             for m in advocate_models
         ]
     })
 
-    # ── Judge: synthesis verdict ─────────────────────────────────────────────
+    # ── Judge: verdict using anon transcript ────────────────────────────────
     yield sse_event("status", {"round": 3, "message": "Generating final verdict..."})
 
     def transcript_section(data: dict) -> str:
-        parts = [f"[{get_model_name(m)}]:\n{data[m]}" for m in advocate_models]
+        parts = [f"[{anon[m]}]:\n{data[m]}" for m in advocate_models]
         return "\n\n---\n\n".join(parts)
 
     judge_prompt = JUDGE_PROMPT.format(

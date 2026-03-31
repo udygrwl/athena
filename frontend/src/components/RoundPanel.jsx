@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import ModelCard from './ModelCard'
 
-export default function RoundPanel({ roundKey, label, icon, data, borderColor, badgeStyle }) {
+export default function RoundPanel({ roundKey, label, icon, data, borderColor, badgeStyle, revealed = true }) {
   const [open, setOpen] = useState(true)
   const isVerdict = roundKey === 'verdict'
 
@@ -26,7 +26,7 @@ export default function RoundPanel({ roundKey, label, icon, data, borderColor, b
             <VerdictContent data={data} />
           ) : (
             data.results.map(r => (
-              <ModelCard key={r.model} result={r} roundKey={roundKey} />
+              <ModelCard key={r.model} result={r} roundKey={roundKey} revealed={revealed} />
             ))
           )}
         </div>
