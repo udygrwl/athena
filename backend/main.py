@@ -20,11 +20,18 @@ from roleplay_prompts import CHAT_SYSTEM_PROMPT
 
 app = FastAPI(title="Athena API")
 
-# CORS: open to all origins (POC — tighten with ALLOWED_ORIGINS in production)
+# CORS — comma-separated list in ALLOWED_ORIGINS, or "*" to allow all
+_raw = os.getenv("ALLOWED_ORIGINS", "*")
+if _raw.strip() == "*":
+    _origins = ["*"]
+    _creds = False
+else:
+    _origins = [o.strip() for o in _raw.split(",") if o.strip()]
+    _creds = True
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
+    allow_origins=_origins,
+    allow_credentials=_creds,
     allow_methods=["*"],
     allow_headers=["*"],
 )
